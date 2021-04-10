@@ -85,7 +85,7 @@ def LAPISDescent(Y, D, rank=None, max_iterations=1000, tolerance=1e-02):
     
     return L_hat
 
-def softImputeDescent(Y, D, lambda_penalty=None, max_iterations=1000, tolerance=1e-02):
+def SoftImputeDescent(Y, D, lambda_penalty=None, max_iterations=1000, tolerance=1e-02):
     ### The soft impute algorithm
     
     L_k = P_Omega(Y, D) ### Initialization
@@ -107,8 +107,8 @@ def softImputeDescent(Y, D, lambda_penalty=None, max_iterations=1000, tolerance=
     return L_hat
 
 
-### Remove weight matrix for now, until you've implemented weighted softImpute
-def r1CompDescent(Y, D, lambda_penalty=None, r_init=40, tolerance=1e-04, max_iterations=1000):
+### Remove weight matrix for now, until you've implemented weighted SoftImpute
+def R1CompDescent(Y, D, lambda_penalty=None, r_init=40, tolerance=1e-04, max_iterations=1000):
     
     def shrink_operator(x, lambda_penalty): ## A helper function, the shrinkage operator
     
@@ -229,7 +229,7 @@ def r1CompDescent(Y, D, lambda_penalty=None, r_init=40, tolerance=1e-04, max_ite
     
     
     
-class softImpute: ### softImpute class. 
+class SoftImpute: ### SoftImpute class. 
     
     def __init__(self, tuning_lambda=None, max_iterations=100, tolerance=1e-02):
         
@@ -249,7 +249,7 @@ class softImpute: ### softImpute class.
         self.__tuning_lambda = np.unique(new_lambda)
         
         
-    def getMaxIterations(self): ### Getting and changing number of iterations for softImpute
+    def getMaxIterations(self): ### Getting and changing number of iterations for SoftImpute
         
         return(self.__max_iterations)
     
@@ -259,7 +259,7 @@ class softImpute: ### softImpute class.
         self.__max_iterations = new_max_iterations
         
    
-    def getTolerance(self): ### Getting and changing minimum required step size for softImpute
+    def getTolerance(self): ### Getting and changing minimum required step size for SoftImpute
         
         return(self.__tolerance)
     
@@ -270,7 +270,7 @@ class softImpute: ### softImpute class.
 
     def fit(self, Y, D): ### Fit model, taking best penalty as the default penalty parameter
         
-        YHat = softImputeDescent(Y, D, lambda_penalty=self.__tuning_lambda, max_iterations=self.__max_iterations, 
+        YHat = SoftImputeDescent(Y, D, lambda_penalty=self.__tuning_lambda, max_iterations=self.__max_iterations, 
                                  tolerance=self.__tolerance)
         
         return(YHat)
@@ -298,7 +298,7 @@ class LAPIS: ### LAPIS class.
         
         self.__rank = np.unique(new_lambda_grid)
         
-    def getMaxIterations(self): ### Getting and changing number of iterations for softImpute
+    def getMaxIterations(self): ### Getting and changing number of iterations for SoftImpute
         
         return(self.__max_iterations)
     
@@ -308,7 +308,7 @@ class LAPIS: ### LAPIS class.
         self.__max_iterations = new_max_iterations
         
    
-    def getTolerance(self): ### Getting and changing minimum required step size for softImpute
+    def getTolerance(self): ### Getting and changing minimum required step size for SoftImpute
         
         return(self.__tolerance)
     
@@ -325,7 +325,7 @@ class LAPIS: ### LAPIS class.
         return(YHat)        
     
     
-class r1Comp: ### softImpute class. 
+class R1Comp: ### SoftImpute class. 
     
     def __init__(self, tuning_lambda=None, r_init=40, tolerance=1e-04, max_iterations=1000):
         
@@ -349,7 +349,7 @@ class r1Comp: ### softImpute class.
         self.__tuning_lambda = np.unique(new_lambda)
         
         
-    def getMaxIterations(self): ### Getting and changing number of iterations for softImpute
+    def getMaxIterations(self): ### Getting and changing number of iterations for SoftImpute
         
         return(self.__max_iterations)
     
@@ -359,7 +359,7 @@ class r1Comp: ### softImpute class.
         self.__max_iterations = new_max_iterations
         
    
-    def getTolerance(self): ### Getting and changing minimum required step size for softImpute
+    def getTolerance(self): ### Getting and changing minimum required step size for SoftImpute
         
         return(self.__tolerance)
     
@@ -370,7 +370,7 @@ class r1Comp: ### softImpute class.
 
     def fit(self, Y, D): ### Fit model, taking best penalty as the default penalty parameter
 
-        YHat = r1CompDescent(Y, D, r_init=self.__r_init, tolerance=self.__tolerance, 
+        YHat = R1CompDescent(Y, D, r_init=self.__r_init, tolerance=self.__tolerance, 
                              max_iterations=self.__max_iterations, 
                              lambda_penalty=self.__tuning_lambda)
         
@@ -388,7 +388,7 @@ def validationGivenTuning(Y, D, tuningValue, method, numFolds=5, max_iterations=
                          r_init=None):
     ### Does K-fold cross-validation, for a given penalty term
     
-        if isinstance(method(1), r1Comp):
+        if isinstance(method(1), R1Comp):
         
             if r_init is None: 
         
@@ -440,8 +440,8 @@ def validationGivenTuning(Y, D, tuningValue, method, numFolds=5, max_iterations=
 def validation(Y, D, method, tuningGrid=None, numFolds=3, max_iterations=1000, tolerance=1e-02,
               r_init=None):
 
-    ### The r1Comp method has one different parameter, so it must be initialized separately
-    if isinstance(method(1), r1Comp):
+    ### The R1Comp method has one different parameter, so it must be initialized separately
+    if isinstance(method(1), R1Comp):
         
         if r_init is None: 
         
