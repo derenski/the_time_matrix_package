@@ -2,7 +2,7 @@ import pandas as pd
 
 import numpy as np
 
-from numpy.linalg import svd, matrix_rank, lstsq
+from numpy.linalg import svd, eig, matrix_rank, lstsq, inv
 
 from scipy.stats import bernoulli
 
@@ -19,6 +19,9 @@ def P_Omega(Y, D): ## Projects data onto set of observed entries,
     
     return(Y*(1-D))
 
+
+## A utility for calculating the rank K SVD of a matrix, Y.
+## Allows for optional shrinkage of the singular values.
 def svdReconstruction(Y, K=None, shrink=False, lambda_penalty=None):
     ### Allows one to calculate the rank K svd of a matrix, Y. 
     ### Includes optional parameters for soft-thresholding. 
@@ -42,18 +45,116 @@ def svdReconstruction(Y, K=None, shrink=False, lambda_penalty=None):
     if (K > sDiag.shape[0]): ### Can't make rank larger than rank of Y
         
         raise ValueError("K is larger than rank of Y.")
-        
-    
     
     ### Rank K reconstruction
-    SVDReconstruction = np.matmul(np.atleast_2d(u[:, 0:K]), np.matmul(np.atleast_2d(S[0:K, 0:K]),np.atleast_2d(vh[0:K, :])))
+    
+    secondPart = np.matmul(np.atleast_2d(S[0:K, 0:K]),
+                           np.atleast_2d(vh[0:K, :]))
+    
+    SVDReconstruction = np.matmul(np.atleast_2d(u[:, 0:K]), secondPart)
     
     return(SVDReconstruction)
 
 
+### A factor model estimation approach to matrix completion
+def factorModelCompletion(Y, D, numFactors=3):
+    
+    ### Helper function for calculating and storing
+    ### the outer products of the rows of a matrix with themselves
+    def outerProductOfRows(aMatrix):
+    
+        listOfMatrices = []
+    
+        for row in range(aMatrix.shape[0]):
+    
+            rowAsArray = np.atleast_2d(aMatrix[row ,:])
+    
+            arrayToAppend = np.matmul(rowAsArray.transpose(), rowAsArray)
+    
+            listOfMatrices.append(arrayToAppend)
+    
+        tensorOfOuterProducts = np.stack(listOfMatrices, axis=2)
+    
+        return(tensorOfOuterProducts)
+    
+    ### Calculate the weighted sum of several matrices
+    def weightedMatrixComp(numpy3DArray, matrixWeights):
+        
+        initialArray = np.zeros(numpy3DArray.shape[0:2])
+        
+        for matrixSlice in range(numpy3DArray.shape[2]):
+            
+            ## Skips the entries that have 0 weight
+            if round(matrixWeights[matrixSlice], 4)==0:
+                
+                next
+            
+            initialArray = initialArray+matrixWeights[matrixSlice]*numpy3DArray[:,:, matrixSlice]
+            
+        return(initialArray)    
+        
+    ### Set unobserved entries to 0.    
+    Y_proj = P_Omega(Y, D)
+    
+    ### Calculate numerator for covariance matrix of Y_proj
+    varianceCovariance = np.matmul(Y_proj, Y_proj.transpose())
+    
+    ### Adjusts demoninator because we only use times where 
+    ### both units are observed
+    times_where_both_observed = np.matmul(1-D, (1-D).transpose()) 
+  
+    altered_cov_est = varianceCovariance/times_where_both_observed
+  
+    ### Preparing to estimate the loadings
+    cov_est_for_PCA = (1/D.shape[0])*altered_cov_est
+  
+    ### The loadings are stored in the variable 'u'
+    _, u = eig(cov_est_for_PCA)
+    
+    if numFactors is None: ### If K is not specified, default to full rank SVD
+        
+        numFactors = sDiag.shape[0]
+    
+    ### Taking the correct number of factors
+    lambda_i = np.sqrt(D.shape[0])*u[:, 0:numFactors]
+    
+    oneMinusD = 1-D
+    
+    ### Calculating te outer products of the loading vectors with themselves,
+    ### used for estimating factors via weighted regression.
+    tensorOfOuterProducts = outerProductOfRows(lambda_i)
+    
+    ### The second term needed for estimating the factors via regression
+    secondPartToRegression = np.matmul((oneMinusD*Y).transpose(), 
+                                       lambda_i)
+    
+    ### Stores estimated factors in a list
+    listOfFts = []
+    
+    for timePoint in range(Y.shape[1]):
+        ### Calculate F_t, for each t
+        
+        matrixWeights = oneMinusD[:, timePoint]
+        
+        ### Computes design matrix for regression
+        designMatrix = weightedMatrixComp(tensorOfOuterProducts, matrixWeights)
+        
+        firstRegressionPart = inv(designMatrix)
+        
+        F_t = np.matmul(firstRegressionPart, secondPartToRegression[timePoint,:])
+        
+        listOfFts.append(F_t)
+        
+    F_tArray = np.stack(listOfFts, axis=1)
+  
+    ### Calculates complete, imputed matrix.
+    L_hat = np.matmul(lambda_i, F_tArray)
+    
+    return(L_hat)
 
+
+### The LAPIS algorithm
 def LAPISDescent(Y, D, rank=None, max_iterations=1000, tolerance=1e-02):
-    ### The LAPIS algorithm
     
     if rank is None: 
         
@@ -85,6 +186,7 @@ def LAPISDescent(Y, D, rank=None, max_iterations=1000, tolerance=1e-02):
     
     return L_hat
 
+### The soft impute algorithm
 def SoftImputeDescent(Y, D, lambda_penalty=None, max_iterations=1000, tolerance=1e-02):
     ### The soft impute algorithm
     
@@ -106,8 +208,7 @@ def SoftImputeDescent(Y, D, lambda_penalty=None, max_iterations=1000, tolerance=
     
     return L_hat
 
-
-### Remove weight matrix for now, until you've implemented weighted SoftImpute
+### The r1Comp algorithm
 def R1CompDescent(Y, D, lambda_penalty=None, r_init=40, tolerance=1e-04, max_iterations=1000):
     
     def shrink_operator(x, lambda_penalty): ## A helper function, the shrinkage operator
@@ -218,18 +319,9 @@ def R1CompDescent(Y, D, lambda_penalty=None, r_init=40, tolerance=1e-04, max_ite
 
     return(Z)
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-class SoftImpute: ### SoftImpute class. 
+
+### SoftImpute class.
+class SoftImpute:  
     
     def __init__(self, tuning_lambda=None, max_iterations=100, tolerance=1e-02):
         
@@ -276,7 +368,8 @@ class SoftImpute: ### SoftImpute class.
         return(YHat)
         
         
-class LAPIS: ### LAPIS class. 
+### LAPIS class.
+class LAPIS:  
     
     def __init__(self, rank=None, max_iterations=1000, tolerance=1e-04):
         
@@ -324,8 +417,8 @@ class LAPIS: ### LAPIS class.
         
         return(YHat)        
     
-    
-class R1Comp: ### SoftImpute class. 
+### The r1Comp class. 
+class R1Comp: 
     
     def __init__(self, tuning_lambda=None, r_init=40, tolerance=1e-04, max_iterations=1000):
         
@@ -377,13 +470,21 @@ class R1Comp: ### SoftImpute class.
         return(YHat)       
     
     
+### A factor model approach to matrix completion
+class FactorModel: 
     
-    
-    
-    
-    
+    def __init__(self, numFactors):
+        
+        self.__numFactors = numFactors
+        
+    def fit(self, Y, D): ### Fit model, taking best penalty as the default penalty parameter
+
+        YHat = factorModelCompletion(Y, D, numFactors = self.__numFactors)
+        
+        return(YHat)
+        
+        
 ##### Utilities for validating ANY matrix completion method    (NEEDS TESTING)
-    
 def validationGivenTuning(Y, D, tuningValue, method, numFolds=5, max_iterations=1000, tolerance=1e-02,
                          r_init=None):
     ### Does K-fold cross-validation, for a given penalty term
@@ -404,6 +505,10 @@ def validationGivenTuning(Y, D, tuningValue, method, numFolds=5, max_iterations=
         
             builtMethod = method(tuningValue, max_iterations=max_iterations, 
                                          r_init=r_init)  
+            
+        elif isinstance(method(1), FactorModel):
+            
+            builtMethod = method(tuningValue)  
     
         else: 
             
@@ -436,7 +541,8 @@ def validationGivenTuning(Y, D, tuningValue, method, numFolds=5, max_iterations=
 
         return(np.mean(errorList))    
     
-    
+
+### Parameter tuning via cross-validation
 def validation(Y, D, method, tuningGrid=None, numFolds=3, max_iterations=1000, tolerance=1e-02,
               r_init=None):
 
@@ -454,9 +560,13 @@ def validation(Y, D, method, tuningGrid=None, numFolds=3, max_iterations=1000, t
         elif r_init <= 0: 
         
             raise ValueError('Rank must be positive!')
-        
+            
         partialFunction= partial(validationGivenTuning, Y, D, method=method, numFolds=numFolds, max_iterations=max_iterations, 
-                               tolerance=tolerance, r_init=r_init)    
+                               tolerance=tolerance, r_init=r_init)
+            
+    elif isinstance(method(1), FactorModel):
+        
+        partialFunction= partial(validationGivenTuning, Y, D, method=method)    
         
     else:
         
@@ -468,3 +578,12 @@ def validation(Y, D, method, tuningGrid=None, numFolds=3, max_iterations=1000, t
         errorMatrix = p.map(partialFunction, tuningGrid)
 
     return(pd.Series(dict(zip(tuningGrid, errorMatrix))))
+
+
+
+
+
+
+
+
+

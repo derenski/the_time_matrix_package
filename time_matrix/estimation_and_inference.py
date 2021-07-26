@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def makeTreatmentDataFrame(Y, LHat, D): 
+def makeTreatmentDataFrame(Y, LHat, DTreated): 
     
     ### Creates a data frame that tracks treatment effect for each unit, relative to when 
     ### the unit adopted the intervention.
@@ -17,16 +17,16 @@ def makeTreatmentDataFrame(Y, LHat, D):
 
     differenceMatrix = pd.melt(differenceMatrix, id_vars=differenceMatrix.columns[0], value_name='estimated_effect')
     
-    T = np.matmul(D, np.triu(np.ones(np.repeat(D.shape[1], 2)))) 
+    Tmatrix = np.matmul(DTreated, np.triu(np.ones(np.repeat(DTreated.shape[1], 2)))) 
     ### Keeps track of how long each unit has adopted the intervention for at each time point, also converted to long format
     
-    T = pd.DataFrame(T, index=Y.index, columns=Y.columns)
+    Tmatrix = pd.DataFrame(Tmatrix, index=Y.index, columns=Y.columns)
     
-    T.reset_index(inplace=True) 
+    Tmatrix.reset_index(inplace=True) 
 
-    T = pd.melt(T, id_vars=T.columns[0], value_name='time_since_intervention_adoption')
+    Tmatrix = pd.melt(Tmatrix, id_vars=Tmatrix.columns[0], value_name='time_since_intervention_adoption')
     
-    joinedData = differenceMatrix.merge(T) ### Join treatment effect data with treatment duration data
+    joinedData = differenceMatrix.merge(Tmatrix) ### Join treatment effect data with treatment duration data
     
     joinedData = joinedData.loc[joinedData['time_since_intervention_adoption'] > 0, :]
     
@@ -34,26 +34,39 @@ def makeTreatmentDataFrame(Y, LHat, D):
 
 
 
-def bootstrappedDataGenerator(Y, fullD, treatedD, bootstrapIterations):
+def bootstrappedDataGenerator(Y, DMissingness, DTreated, bootstrapIterations):
     #### Generates bootstrapped treatment effect data sets. 
     #### These data sets can be aggregated together in different ways to generate confidence intervals
     ### for various treatment effects. 
     
+    ### As there are two types of missingness present in panel data 
+    ### (actual missing observations, and observations that are missing 
+    ### because they correspond to treated cells), we differentiate
+    ### the missingness types with two arguments
+    
+    ### DMissingness is the full missingness matrix that will be used 
+    ### for matrix completion. 
+    
+    ### DTreated is a matrix representing ONLY the treatment adoption design,
+    ### Meaning the only 1's in this matrix correspond to cells that are treated,
+    ### and not to cells missing for another reason. 
+
+    
     allYs = {}
     
-    allFullDs = {}
+    allDMissingnesses = {}
     
-    allTreatedDs = {}
+    allDTreateds = {}
     
     ### All array arguments are pandas DataFrames so that the treatment effect DataFrame can be constructed
     
-    allDurations = pd.Series(np.apply_along_axis(lambda x: x.sum(), 1, treatedD))
+    allDurations = pd.Series(np.apply_along_axis(lambda x: x.sum(), 1, DTreated))
 
     treatmentDistribution = allDurations.value_counts().sort_index()
     
   #  if weightMatrix is None: ### If weight matrix not supplied, sets matrix to a matrix of 1's
         
-  #      weightMatrix = pd.DataFrame(np.ones(treatedD.shape), index=Y.index, columns=Y.columns)
+  #      weightMatrix = pd.DataFrame(np.ones(DTreated.shape), index=Y.index, columns=Y.columns)
 
     for b in range(bootstrapIterations): ### Generates bootstrapIterations number of data sets
 
@@ -69,9 +82,9 @@ def bootstrappedDataGenerator(Y, fullD, treatedD, bootstrapIterations):
             ### Sampling from all the DataFrames
             theSampledY = Y.iloc[theSample,:]
 
-            theSampledFullD = fullD.iloc[theSample,:]
+            theSampledDMissingness = DMissingness.iloc[theSample,:]
 
-            theSampledTreatedD = treatedD.iloc[theSample,:]
+            theSampledDTreated = DTreated.iloc[theSample,:]
 
        #     theSampledWeightMatrix = weightMatrix.iloc[theSample,:]
 
@@ -79,9 +92,9 @@ def bootstrappedDataGenerator(Y, fullD, treatedD, bootstrapIterations):
 
                 bootstrappedY = theSampledY
 
-                bootstrappedFullD = theSampledFullD
+                bootstrappedDMissingness = theSampledDMissingness
 
-                bootstrappedTreatedD = theSampledTreatedD
+                bootstrappedDTreated = theSampledDTreated
 
        #         bootstrappedWeightMatrix = theSampledWeightMatrix
 
@@ -89,16 +102,16 @@ def bootstrappedDataGenerator(Y, fullD, treatedD, bootstrapIterations):
 
                 bootstrappedY = pd.concat((bootstrappedY, theSampledY), axis=0)
 
-                bootstrappedFullD = pd.concat((bootstrappedFullD, theSampledFullD), axis=0)
+                bootstrappedDMissingness = pd.concat((bootstrappedDMissingness, theSampledDMissingness), axis=0)
 
-                bootstrappedTreatedD = pd.concat((bootstrappedTreatedD, theSampledTreatedD), axis=0)
+                bootstrappedDTreated = pd.concat((bootstrappedDTreated, theSampledDTreated), axis=0)
 
-       #         bootstrappedWeightMatrix = pd.concat((bootstrappedTreatedD, theSampledWeightMatrix), axis=0)
+       #         bootstrappedWeightMatrix = pd.concat((bootstrappedDTreated, theSampledWeightMatrix), axis=0)
                 
         allYs[b+1] = bootstrappedY
         
-        allFullDs[b+1] = bootstrappedFullD
+        allDMissingnesses[b+1] = bootstrappedDMissingness
 
-        allTreatedDs[b+1] = bootstrappedTreatedD
+        allDTreateds[b+1] = bootstrappedDTreated
     
-    return allYs, allFullDs, allTreatedDs
+    return allYs, allDMissingnesses, allDTreateds
